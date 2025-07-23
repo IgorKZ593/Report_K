@@ -1,5 +1,17 @@
 # insert_date.py
 
+import os
+import sys
+import json
+
+# Проверка и удаление существующего файла report_dates.json
+json_path = os.path.join("Data_work", "report_dates.json")
+if os.path.exists(json_path):
+    try:
+        os.remove(json_path)
+    except Exception:
+        pass  # Не выводим ошибку, если не удалось удалить
+
 # Проверка и импорт необходимых модулей
 def check_modules():
     """
@@ -17,9 +29,6 @@ def check_modules():
 
 check_modules()
 
-import sys
-import os
-import json
 import datetime
 import holidays
 import keyboard
