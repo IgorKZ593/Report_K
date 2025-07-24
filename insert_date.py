@@ -86,9 +86,21 @@ def find_nearest_valid_dates(date_obj, min_date, holidays_us):
         after += datetime.timedelta(days=1)
     return before, after
 
+def suggest_previous_valid_date(date_obj, min_date, holidays_us):
+    """
+    Возвращает ближайшую допустимую дату до date_obj (не выходной и не праздник), не раньше min_date.
+    """
+    prev_date = date_obj - datetime.timedelta(days=1)
+    while prev_date >= min_date:
+        if not is_weekend(prev_date) and not is_us_holiday(prev_date, holidays_us):
+            return prev_date
+        prev_date -= datetime.timedelta(days=1)
+    return None
+
 def get_date_input(prompt, min_date, holidays_us, start_date=None):
     """
     Запрашивает у пользователя дату, выполняет все проверки и возвращает объект datetime.
+    Добавлена логика проверки на сегодня и будущее, с подбором ближайшей допустимой даты назад.
     """
     while True:
         date_str = input(prompt)
@@ -98,6 +110,23 @@ def get_date_input(prompt, min_date, holidays_us, start_date=None):
         except ValueError:
             print("[bold red]Ошибка: введена некорректная дата! Используйте dd/mm/yyyy.[/bold red]")
             continue
+
+        today = datetime.date.today()
+
+        # --- Новый блок: Проверка на сегодня и будущее ---
+        if date_obj == today:
+            print("[bold red]Невозможно сделать отчет на текущую дату[/bold red]")
+            suggested = suggest_previous_valid_date(date_obj, min_date, holidays_us)
+            if suggested:
+                print(f"[bold yellow]Предлагаемая дата: {suggested.strftime('%d.%m.%Y')}[/bold yellow]")
+            continue
+        if date_obj > today:
+            print("[bold red]Невозможно сформировать отчет на будущее[/bold red]")
+            suggested = suggest_previous_valid_date(today, min_date, holidays_us)
+            if suggested:
+                print(f"[bold yellow]Предлагаемая дата: {suggested.strftime('%d.%m.%Y')}[/bold yellow]")
+            continue
+        # --- Конец нового блока ---
 
         if date_obj < min_date:
             print("[bold red]Ошибка: Указанный вами период не может быть применен, так как выходит за период деятельности N1 Broker[/bold red]")
