@@ -1,18 +1,22 @@
 # insert_date.py
+"""
+Требуется библиотека rich для цветного вывода.
+Установить вручную при необходимости: pip install rich
+"""
 
 import os
 import sys
 import json
 
-# Проверка и удаление существующего файла report_dates.json
-json_path = os.path.join("Data_work", "report_dates.json")
-if os.path.exists(json_path):
-    try:
-        os.remove(json_path)
-    except Exception:
-        pass  # Не выводим ошибку, если не удалось удалить
+# Автоматическая установка rich, если не установлен
+try:
+    from rich import print
+except ImportError:
+    os.system(f"{sys.executable} -m pip install rich")
+    from rich import print
 
 # Проверка и импорт необходимых модулей
+
 def check_modules():
     """
     Проверяет наличие необходимых модулей и уведомляет пользователя, если какой-либо отсутствует.
@@ -24,7 +28,7 @@ def check_modules():
         try:
             importlib.import_module(mod)
         except ImportError:
-            print(f"Модуль '{mod}' не установлен. Установите его командой: pip install {mod}")
+            print(f"[bold red]Модуль '{mod}' не установлен. Установите его командой: pip install {mod}[/bold red]")
             sys.exit(1)
 
 check_modules()
@@ -33,19 +37,27 @@ import datetime
 import holidays
 import keyboard
 
+# Проверка и удаление существующего файла report_dates.json
+json_path = os.path.join("Data_work", "report_dates.json")
+if os.path.exists(json_path):
+    try:
+        os.remove(json_path)
+    except Exception:
+        pass  # Не выводим ошибку, если не удалось удалить
+
 def print_welcome():
     """
     Выводит приветственное сообщение.
     """
-    print("Подготовка аналитического отчета для клиентов N1 Broker")
+    print("[bold green]Подготовка аналитического отчета для клиентов N1 Broker[/bold green]")
 
 def wait_for_esc():
     """
     Проверяет, нажата ли клавиша Esc для выхода.
     """
-    print("Для выхода нажмите Esc")
+    print("[bold yellow]Для выхода нажмите Esc[/bold yellow]")
     if keyboard.is_pressed('esc'):
-        print("Выход по Esc.")
+        print("[bold red]Выход по Esc.[/bold red]")
         sys.exit(0)
 
 def is_weekend(date_obj):
@@ -84,28 +96,30 @@ def get_date_input(prompt, min_date, holidays_us, start_date=None):
         try:
             date_obj = datetime.datetime.strptime(date_str, "%d/%m/%Y").date()
         except ValueError:
-            print("Неверный формат даты. Используйте формат dd/mm/yyyy.")
+            print("[bold red]Ошибка: введена некорректная дата! Используйте dd/mm/yyyy.[/bold red]")
             continue
 
         if date_obj < min_date:
-            print("Указанный вами период не может быть применен, так как выходит за период деятельности N1 Broker")
+            print("[bold red]Ошибка: Указанный вами период не может быть применен, так как выходит за период деятельности N1 Broker[/bold red]")
             continue
 
         if start_date and date_obj <= start_date:
-            print("Неверный диапазон дат. Конечная дата должна быть старше начальной")
+            print("[bold red]Ошибка: Неверный диапазон дат. Конечная дата должна быть старше начальной[/bold red]")
             continue
 
         if is_weekend(date_obj):
-            print(f"{date_obj.strftime('%d.%m.%Y')} — выходной день")
+            print(f"[bold yellow]{date_obj.strftime('%d.%m.%Y')} — выходной день[/bold yellow]")
             before, after = find_nearest_valid_dates(date_obj, min_date, holidays_us)
-            print(f"Ближайшие доступные даты для формирования отчета: {before.strftime('%d.%m.%Y')}, {after.strftime('%d.%m.%Y')}")
+            print(f"[bold yellow]Ближайшие доступные даты для формирования отчета: [/bold yellow]"
+                  f"[bold cyan]{before.strftime('%d.%m.%Y')}[/bold cyan], [bold cyan]{after.strftime('%d.%m.%Y')}[/bold cyan]")
             continue
 
         if is_us_holiday(date_obj, holidays_us):
             holiday_name = holidays_us.get(date_obj)
-            print(f"{date_obj.strftime('%d.%m.%Y')} — {holiday_name}")
+            print(f"[bold yellow]{date_obj.strftime('%d.%m.%Y')} — {holiday_name}[/bold yellow]")
             before, after = find_nearest_valid_dates(date_obj, min_date, holidays_us)
-            print(f"Ближайшие доступные даты для формирования отчета: {before.strftime('%d.%m.%Y')}, {after.strftime('%d.%m.%Y')}")
+            print(f"[bold yellow]Ближайшие доступные даты для формирования отчета: [/bold yellow]"
+                  f"[bold cyan]{before.strftime('%d.%m.%Y')}[/bold cyan], [bold cyan]{after.strftime('%d.%m.%Y')}[/bold cyan]")
             continue
 
         return date_obj
@@ -121,7 +135,7 @@ def save_dates_to_json(start_date, end_date, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-    print(f"Даты сохранены в {path}")
+    print(f"[bold green]Даты сохранены в {path}[/bold green]")
 
 def main():
     """
@@ -133,17 +147,21 @@ def main():
 
     # Ввод начальной даты
     start_date = get_date_input("Введите дату начала отчета (dd/mm/yyyy): ", min_date, holidays_us)
-    print(f"Дата начала: {start_date.strftime('%d.%m.%Y')}")
+    print(f"[bold green]Дата начала отчета:[/bold green] [bold cyan]{start_date.strftime('%d.%m.%Y')}[/bold cyan]")
     wait_for_esc()
 
     # Ввод конечной даты
     end_date = get_date_input("Введите дату завершения отчета (dd/mm/yyyy): ", min_date, holidays_us, start_date=start_date)
-    print(f"Дата завершения отчета: {end_date.strftime('%d.%m.%Y')}")
+    print(f"[bold green]Дата завершения отчета:[/bold green] [bold cyan]{end_date.strftime('%d.%m.%Y')}[/bold cyan]")
     wait_for_esc()
 
     # Сохраняем в JSON
     save_path = os.path.join("Data_work", "report_dates.json")
     save_dates_to_json(start_date, end_date, save_path)
+
+    # Итоговое сообщение о периоде отчета
+    print("[bold magenta]\nОтчет будет сформирован за период:[/bold magenta]")
+    print(f"[bold magenta]с {start_date.strftime('%d.%m.%Y')} по {end_date.strftime('%d.%m.%Y')}[/bold magenta]")
 
 if __name__ == "__main__":
     main()
