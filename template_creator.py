@@ -60,8 +60,16 @@ def get_output_filename(name_data: dict, date_data: dict) -> str:
         'портфель_Иванов И. В._01.06.2024_30.06.2025.xlsx'
     """
     # Извлекаем данные из словарей
-    surname = name_data.get('surname', '')
-    initials = name_data.get('initials', '')
+    #surname = name_data.get('surname', '')
+    #initials = name_data.get('initials', '')
+    client_name = name_data.get("client_name", "").strip()
+    if client_name:
+        parts = client_name.split(" ", 1)
+        surname = parts[0] if len(parts) > 0 else ""
+        initials = parts[1] if len(parts) > 1 else ""
+    else:
+        surname = ""
+        initials = ""
     start_date = date_data.get('start_date', '')
     end_date = date_data.get('end_date', '')
     
@@ -133,7 +141,8 @@ def create_excel_template(output_path: str, filename: str):
         
         # Устанавливаем коричневый цвет для ярлыка листа
         # RGB для коричневого: (139, 69, 19)
-        sheet.api.Tab.Color = (139, 69, 19)
+        # sheet.api.Tab.Color = (139, 69, 19)
+        sheet.api.Tab.ColorIndex = 53  # Коричневый
         
         # Сохраняем файл
         wb.save(output_path)
