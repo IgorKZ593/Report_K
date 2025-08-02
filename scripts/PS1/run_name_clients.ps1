@@ -1,5 +1,6 @@
-chcp 65001 > $null
-Write-Host "`n👤 Извлечение имени клиента запущено..." -ForegroundColor Cyan
+# run_name_clients.ps1
+$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new()
+
+Write-Host "`n🕓 Запуск name_clients.py..." -ForegroundColor Cyan
 python "F:\Python Projets\Report\name_clients.py"
-Write-Host "`n✅ Готово" -ForegroundColor Yellow
-[Console]::ReadKey($true) > $null
+Write-Host "`n✅ name_clients.py завершён." -ForegroundColor Yellow
