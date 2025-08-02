@@ -194,7 +194,9 @@ def main():
     print(f"[bold green]Дата завершения отчета: [bold cyan]{end_date.strftime('%d.%m.%Y')}[/bold cyan]")
 
     # Сохраняем выбранные даты в файл
-    save_path = os.path.join("Data_work", "report_dates.json")
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    save_path = os.path.join(BASE_DIR, "Data_work", "report_dates.json")
+
     save_dates_to_json(start_date, end_date, save_path)
 
     # Финальный вывод периода отчета
