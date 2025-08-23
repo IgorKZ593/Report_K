@@ -9,6 +9,7 @@ BAT_DIR = os.path.join(BASE_DIR, "scripts", "BAT")
 MODULES = [
     ("insert_date.bat", "📅 Ввод даты"),
     ("name_clients.bat", "👤 Имя клиента"),
+    ("extract_isin.bat", "🔎 Извлечение ISIN"),
     ("template_creator.bat", "📄 Создание шаблона отчета")
 ]
 
