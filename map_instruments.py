@@ -18,10 +18,12 @@ from typing import Tuple, List, Dict, Any, Optional
 try:
     from rich.console import Console
     from rich import print
+    from rich.table import Table
 except ImportError:
     os.system(f'"{sys.executable}" -m pip install rich')
     from rich.console import Console
     from rich import print
+    from rich.table import Table
 
 console = Console()
 
@@ -219,6 +221,7 @@ def match_isins(
             hits_stocks.append({
                 "isin": isin,
                 "ticker": s.get("ticker", ""),
+                "name": s.get("name", ""),
                 "type": s.get("type", ""),
             })
             continue
@@ -291,6 +294,45 @@ def main(argv: Optional[List[str]] = None) -> int:
         console.print(f"  Облигации: [bright_cyan]{len(hits_bonds)}[/bright_cyan]")
         console.print(f"  Структурные продукты: [bright_cyan]{len(hits_sp)}[/bright_cyan]")
         console.print(f"  Неизвестные (noname): [bright_cyan]{len(misses)}[/bright_cyan]")
+
+        # Постоянный предпросмотр результатов (по 3 категориям). Записи не пишутся на диск.
+        preview_limit = 20
+
+        def _render_table(title: str, columns: list[str], rows: list[list[str]]):
+            if not rows:
+                console.print(f"[yellow]{title}: нет записей[/yellow]")
+                return
+            table = Table(title=title, show_lines=False)
+            for col in columns:
+                # номер колонки и короткие поля делаем no_wrap для аккуратного вида
+                if col in ("№", "ISIN", "Ticker", "Type"):
+                    table.add_column(col, no_wrap=True)
+                else:
+                    table.add_column(col)
+            for i, r in enumerate(rows[:preview_limit], 1):
+                table.add_row(str(i), *r)
+            console.print(table)
+
+        # 1) Предпросмотр: Акции/ETF
+        stock_rows = [
+            [rec.get("isin", ""), rec.get("ticker", ""), rec.get("name", ""), rec.get("type", "")]
+            for rec in hits_stocks
+        ]
+        _render_table("Предпросмотр stock_etf (будущий JSON)", ["№", "ISIN", "Ticker", "Name", "Type"], stock_rows)
+
+        # 2) Предпросмотр: Облигации
+        bond_rows = [
+            [rec.get("isin", ""), rec.get("name", "")]
+            for rec in hits_bonds
+        ]
+        _render_table("Предпросмотр bonds (будущий JSON)", ["№", "ISIN", "Name"], bond_rows)
+
+        # 3) Предпросмотр: Структурные продукты
+        sp_rows = [
+            [rec.get("isin", ""), rec.get("type", "СТРУКТУРНЫЙ ПРОДУКТ")]
+            for rec in hits_sp
+        ]
+        _render_table("Предпросмотр structured (будущий JSON)", ["№", "ISIN", "Type"], sp_rows)
 
         # Никакой записи файлов и копирования PDF на этом этапе
         console.print("[yellow]Этап 3 завершён: сопоставление выполнено. Запись JSON и копирование PDF будут на следующем этапе.[/yellow]")
