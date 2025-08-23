@@ -10,6 +10,8 @@ import os
 import sys
 import json
 import re
+import shutil
+from datetime import datetime
 from glob import glob
 from pathlib import Path
 from typing import Tuple, List, Dict, Any, Optional
@@ -30,6 +32,7 @@ console = Console()
 # Константы путей (следуем принятой структуре проекта)
 BASE_DIR = r"F:\Python Projets\Report"
 DATA_WORK = BASE_DIR + r"\Data_work"
+DATA_BACKUP = BASE_DIR + r"\Data_Backup"
 
 # Пути к справочникам
 REF_STOCKS_XLSX = r"F:\Python Projets\Report\dictionaries\reference_stocks\reference_stocks_etf.xlsx"
@@ -250,6 +253,90 @@ def match_isins(
 
     return hits_stocks, hits_bonds, hits_sp, misses
 
+# ---------- Вспомогательные функции для Этапа 4 ----------
+
+def _ts_suffix() -> str:
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+def _ensure_dir(p: Path) -> None:
+    p.mkdir(parents=True, exist_ok=True)
+
+def build_output_paths(client: str, period: dict) -> dict:
+    """
+    Возвращает словарь с именами выходных файлов и каталогом для SP.
+    Все имена строго по шаблонам.
+    """
+    start = period["start_date"]
+    end = period["end_date"]
+    base = Path(DATA_WORK)
+    return {
+        "stocks_json": base / f"stock_etf_{client}_{start}__{end}.json",
+        "bonds_json":  base / f"bonds_{client}_{start}__{end}.json",
+        "sp_json":     base / f"sp_{client}_{start}__{end}.json",
+        "noname_json": base / f"noname_isin_{client}_{start}__{end}.json",
+        "sp_dir":      base / f"sp_{client}_{start}__{end}",
+    }
+
+def _archive_path_to_backup(path: Path) -> Path:
+    """
+    Перемещает файл/папку в DATA_BACKUP с суффиксом '_резерв_YYYYMMDD_HHMMSS'.
+    Возвращает путь в бэкапе.
+    """
+    _ensure_dir(Path(DATA_BACKUP))
+    suffix = _ts_suffix()
+    target_name = f"{path.stem}_резерв_{suffix}{path.suffix}" if path.is_file() else f"{path.name}_резерв_{suffix}"
+    target = Path(DATA_BACKUP) / target_name
+    shutil.move(str(path), str(target))
+    return target
+
+def archive_existing_outputs(paths: dict) -> None:
+    """
+    Если выходные JSON уже существуют — переместить в Data_Backup.
+    Если папка SP уже существует — также переместить в Data_Backup.
+    """
+    # JSON-файлы
+    for key in ("stocks_json", "bonds_json", "sp_json", "noname_json"):
+        p = Path(paths[key])
+        if p.exists():
+            moved = _archive_path_to_backup(p)
+            console.print(f"[yellow]⚠️ Найден существующий файл, перемещен в резерв:[/yellow] [bright_cyan]{moved}[/bright_cyan]")
+
+    # Папка SP
+    sp_dir = Path(paths["sp_dir"])
+    if sp_dir.exists():
+        moved = _archive_path_to_backup(sp_dir)
+        console.print(f"[yellow]⚠️ Найдена существующая папка TermSheets, перемещена в резерв:[/yellow] [bright_cyan]{moved}[/bright_cyan]")
+
+def write_json_with_header(out_path: Path, client: str, period: dict, items: list) -> None:
+    payload = {
+        "client": client,
+        "period": {"start_date": period["start_date"], "end_date": period["end_date"]},
+        "items": items,
+    }
+    with out_path.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    console.print(f"[green]📝 JSON записан:[/green] [bright_cyan]{out_path}[/bright_cyan]")
+
+def copy_termsheets(hits_sp: list[dict], target_dir: Path) -> tuple[int, int]:
+    """
+    Копирует существующие PDF по именам ISIN в целевой каталог.
+    Возвращает (скопировано, отсутствуют).
+    """
+    _ensure_dir(target_dir)
+    copied = 0
+    missing = 0
+    for rec in hits_sp:
+        pdf = rec.get("pdf_path")
+        isin = rec.get("isin", "")
+        if pdf and os.path.isfile(pdf):
+            dst = target_dir / f"{isin}.pdf"
+            shutil.copy2(pdf, dst)
+            copied += 1
+        else:
+            console.print(f"[yellow]⚠️ TermSheet не найден для ISIN:[/yellow] [bright_cyan]{isin}[/bright_cyan]")
+            missing += 1
+    return copied, missing
+
 # ---------- Точка входа ----------
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -334,8 +421,32 @@ def main(argv: Optional[List[str]] = None) -> int:
         ]
         _render_table("Предпросмотр structured (будущий JSON)", ["№", "ISIN", "Type"], sp_rows)
 
-        # Никакой записи файлов и копирования PDF на этом этапе
-        console.print("[yellow]Этап 3 завершён: сопоставление выполнено. Запись JSON и копирование PDF будут на следующем этапе.[/yellow]")
+        # === Этап 4: запись выходных JSON и копирование TermSheets ===
+        console.print("[green]💾 Формирование выходов (JSON + TermSheets)…[/green]")
+
+        # Построить пути и имена
+        paths = build_output_paths(client, period)
+
+        # Архивировать прошлые результаты (если есть)
+        archive_existing_outputs(paths)
+
+        # Запись трех основных JSON
+        write_json_with_header(paths["stocks_json"], client, period, hits_stocks)
+        write_json_with_header(paths["bonds_json"],  client, period, hits_bonds)
+        write_json_with_header(paths["sp_json"],     client, period, hits_sp)
+
+        # Запись noname JSON при наличии пропусков
+        if misses:
+            write_json_with_header(paths["noname_json"], client, period, [{"isin": m} for m in misses])
+        else:
+            console.print("[green]✅ Неизвестных ISIN нет — noname JSON не создавался[/green]")
+
+        # Копирование TermSheets
+        copied, missing = copy_termsheets(hits_sp, paths["sp_dir"])
+        console.print(f"[green]📦 Папка TermSheets:[/green] [bright_cyan]{paths['sp_dir']}[/bright_cyan]")
+        console.print(f"[green]↳ Скопировано PDF:[/green] [bright_cyan]{copied}[/bright_cyan]; [yellow]Отсутствуют:[/yellow] [bright_cyan]{missing}[/bright_cyan]")
+
+        console.print("[yellow]Этап 4 завершён: выходные JSON созданы, TermSheets скопированы (старые результаты отправлены в Data_Backup).[/yellow]")
         return 0
 
     except KeyboardInterrupt:
