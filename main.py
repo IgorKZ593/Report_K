@@ -10,8 +10,10 @@ MODULES = [
     ("insert_date.bat", "📅 Ввод даты"),
     ("name_clients.bat", "👤 Имя клиента"),
     ("extract_isin.bat", "🔎 Извлечение ISIN"),
-    ("template_creator.bat", "📄 Создание шаблона отчета")
+    ("map_instruments.bat", "🧭 Сопоставление инструментов"),
+    ("template_creator.bat", "📄 Создание шаблона отчета"),
 ]
+
 
 def run_module(bat_file, description):
     print(f"\n[INFO] 🔸 Запуск модуля: {description}")

@@ -19,8 +19,12 @@ Write-Host "`n2. ▶ name_clients.py" -ForegroundColor Green
 Write-Host "`n3. ▶ extract_isin.py" -ForegroundColor Green
 & "$ps1Path\run_extract_isin.ps1"
 
-# 4️⃣ template_creator
-Write-Host "`n4. ▶ template_creator.py" -ForegroundColor Green
+# 4️⃣ map_instruments
+Write-Host "`n4. ▶ map_instruments.py" -ForegroundColor Green
+& "$ps1Path\run_map_instruments.ps1"
+
+# 5️⃣ template_creator
+Write-Host "`n5. ▶ template_creator.py" -ForegroundColor Green
 & "$ps1Path\run_template_creator.ps1"
 
 Write-Host "`n✅ Все модули успешно выполнены." -ForegroundColor Yellow

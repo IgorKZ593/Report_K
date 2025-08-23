@@ -33,6 +33,7 @@ console = Console()
 BASE_DIR = r"F:\Python Projets\Report"
 DATA_WORK = BASE_DIR + r"\Data_work"
 DATA_BACKUP = BASE_DIR + r"\Data_Backup"
+NAME_JSON = DATA_WORK + r"\name_clients.json"
 
 # Пути к справочникам
 REF_STOCKS_XLSX = r"F:\Python Projets\Report\dictionaries\reference_stocks\reference_stocks_etf.xlsx"
@@ -95,20 +96,58 @@ def load_client_isins(path: Path) -> Tuple[str, Dict[str, str], List[str]]:
 
 def find_input_payload(data_work: str) -> Path:
     """
-    Ищет ровно один файл по маске isin_*.json в DATA_WORK.
-    0 — ошибка; >1 — перечислить и ошибка; иначе вернуть Path.
+    Ищет входной файл по маске isin_*.json в DATA_WORK.
+    Если в папке есть файлы других клиентов, они перемещаются в Data_Backup.
+    Для текущего клиента допускается ровно один файл; иначе — ошибка.
+    При отсутствии name_clients.json сохраняется прежняя логика выбора.
     """
     pattern = os.path.join(data_work, "isin_*.json")
-    files = [Path(p) for p in glob(pattern)]
+    files = [Path(p) for p in glob(pattern) if os.path.isfile(p)]
+
     if not files:
         console.print(f"[red]❌ Во входной папке [/red][bright_cyan]{data_work}[/bright_cyan][red] нет файлов по маске isin_*.json[/red]")
         sys.exit(1)
-    if len(files) > 1:
-        console.print(f"[red]❌ Найдено несколько файлов по маске в [/red][bright_cyan]{data_work}[/bright_cyan][red]:[/red]")
-        for p in files:
-            console.print(f"[bright_cyan]  - {p.name}[/bright_cyan]")
+
+    # Пытаемся определить текущего клиента
+    client = _read_current_client_from_namejson()
+
+    # Если клиента определить не удалось — работаем по прежней схеме (выбрать один, остальные в резерв)
+    if not client:
+        keep, to_archive = _pick_isin_to_keep(files)
+        console.print(f"[yellow]⚠️ Не удалось определить клиента по name_clients.json. "
+                      f"Оставляю самый подходящий:[/yellow] [bright_cyan]{keep.name}[/bright_cyan]")
+        _ensure_dir(Path(DATA_BACKUP))
+        for old in to_archive:
+            moved = _archive_path_to_backup(old)
+            console.print(f"[yellow]↳ Перемещён в резерв:[/yellow] [bright_cyan]{moved}[/bright_cyan]")
+        return keep
+
+    # Фильтрация по текущему клиенту
+    matching = [p for p in files if f"isin_{client}_" in p.name]
+    foreign  = [p for p in files if p not in matching]
+
+    # Все "чужие" входные JSON — в резерв
+    if foreign:
+        _ensure_dir(Path(DATA_BACKUP))
+        for old in foreign:
+            moved = _archive_path_to_backup(old)
+            console.print(f"[yellow]⚠️ Найден входной JSON другого клиента, перемещён в резерв:[/yellow] [bright_cyan]{moved}[/bright_cyan]")
+
+    # Проверки по текущему клиенту
+    if not matching:
+        console.print(f"[red]❌ Для клиента [/red][bright_cyan]{client}[/bright_cyan][red] не найдено ни одного файла "
+                      f"isin_{client}_*.json в [/red][bright_cyan]{data_work}[/bright_cyan][red].[/red]")
         sys.exit(1)
-    return files[0]
+
+    if len(matching) > 1:
+        console.print(f"[red]❌ Найдено несколько входных файлов для клиента [/red][bright_cyan]{client}[/bright_cyan][red]:[/red]")
+        for p in matching:
+            console.print(f"[bright_cyan]  - {p.name}[/bright_cyan]")
+        console.print("[yellow]Удали лишние или перемести их в Data_Backup и повтори запуск.[/yellow]")
+        sys.exit(1)
+
+    # Ровно один корректный файл
+    return matching[0]
 
 # === Автоустановка openpyxl ===
 try:
@@ -307,6 +346,116 @@ def archive_existing_outputs(paths: dict) -> None:
         moved = _archive_path_to_backup(sp_dir)
         console.print(f"[yellow]⚠️ Найдена существующая папка TermSheets, перемещена в резерв:[/yellow] [bright_cyan]{moved}[/bright_cyan]")
 
+def find_previous_sp_dirs(client: str, keep_dir: Path) -> list[Path]:
+    """
+    Ищет в Data_work все каталоги вида 'sp_{client}_*',
+    КРОМЕ каталога с именем keep_dir.name (целевой на текущий запуск).
+    """
+    pattern = Path(DATA_WORK) / f"sp_{client}_*"
+    candidates = [Path(p) for p in glob(str(pattern))]
+    return [p for p in candidates if p.is_dir() and p.name != keep_dir.name]
+
+def find_all_sp_dirs_except(keep_dir: Path) -> list[Path]:
+    """
+    Находит в Data_work все каталоги по маске 'sp_*',
+    КРОМЕ каталога с именем keep_dir.name (целевой текущего запуска).
+    Используется для очистки Data_work от папок других клиентов/периодов.
+    """
+    pattern = Path(DATA_WORK) / "sp_*"
+    candidates = [Path(p) for p in glob(str(pattern))]
+    return [p for p in candidates if p.is_dir() and p.name != keep_dir.name]
+
+def archive_dirs_to_backup(dirs: list[Path]) -> None:
+    """
+    Перемещает перечисленные каталоги в Data_Backup
+    с суффиксом '_резерв_{YYYYMMDD_%H%M%S}'.
+    """
+    if not dirs:
+        return
+    _ensure_dir(Path(DATA_BACKUP))
+    for src in dirs:
+        moved = _archive_path_to_backup(src)
+        console.print(f"[yellow]⚠️ Найдена старая папка TermSheets, перемещена в резерв:[/yellow] [bright_cyan]{moved}[/bright_cyan]")
+
+def find_previous_jsons_for_client(client: str, period: dict, keep_paths: dict) -> list[Path]:
+    """
+    Возвращает список ВСЕХ JSON в Data_work для данного клиента по маскам:
+      stock_etf_{client}_*.json
+      bonds_{client}_*.json
+      sp_{client}_*.json
+      noname_isin_{client}_*.json
+    КРОМЕ текущих целевых файлов из keep_paths (их имена исключаем).
+    """
+    base = Path(DATA_WORK)
+    patterns = [
+        base / f"stock_etf_{client}_*.json",
+        base / f"bonds_{client}_*.json",
+        base / f"sp_{client}_*.json",
+        base / f"noname_isin_{client}_*.json",
+    ]
+    keep_names = {
+        Path(keep_paths["stocks_json"]).name,
+        Path(keep_paths["bonds_json"]).name,
+        Path(keep_paths["sp_json"]).name,
+        Path(keep_paths["noname_json"]).name,
+    }
+    results = []
+    for pat in patterns:
+        for p in glob(str(pat)):
+            pth = Path(p)
+            if pth.is_file() and pth.name not in keep_names:
+                results.append(pth)
+    return results
+
+def archive_jsons_to_backup(files: list[Path]) -> None:
+    """
+    Перемещает перечисленные JSON-файлы в Data_Backup с суффиксом '_резерв_YYYYMMDD_HHMMSS'.
+    """
+    if not files:
+        return
+    _ensure_dir(Path(DATA_BACKUP))
+    for src in files:
+        moved = _archive_path_to_backup(src)
+        console.print(f"[yellow]⚠️ Найден старый JSON, перемещен в резерв:[/yellow] [bright_cyan]{moved}[/bright_cyan]")
+
+def find_foreign_jsons(client: str, keep_paths: dict) -> list[Path]:
+    """
+    Находит ВСЕ JSON-файлы в Data_work (stock_etf_*, bonds_*, sp_*, noname_isin_*),
+    относящиеся к другим клиентам (имя файла НЕ содержит client),
+    и не совпадающие с текущими целевыми путями из keep_paths.
+    """
+    base = Path(DATA_WORK)
+    patterns = [
+        base / "stock_etf_*.json",
+        base / "bonds_*.json",
+        base / "sp_*.json",
+        base / "noname_isin_*.json",
+    ]
+    keep_names = {
+        Path(keep_paths["stocks_json"]).name,
+        Path(keep_paths["bonds_json"]).name,
+        Path(keep_paths["sp_json"]).name,
+        Path(keep_paths["noname_json"]).name,
+    }
+    results = []
+    for pat in patterns:
+        for p in glob(str(pat)):
+            pth = Path(p)
+            # чужой клиент и не текущие целевые имена
+            if pth.is_file() and (client not in pth.name) and (pth.name not in keep_names):
+                results.append(pth)
+    return results
+
+
+def find_foreign_sp_dirs(client: str, keep_dir: Path) -> list[Path]:
+    """
+    Находит все каталоги sp_* в Data_work, которые НЕ относятся к client
+    и не совпадают с keep_dir (целевой каталог текущего запуска).
+    """
+    pattern = Path(DATA_WORK) / "sp_*"
+    candidates = [Path(p) for p in glob(str(pattern))]
+    return [p for p in candidates if p.is_dir() and (client not in p.name) and (p.name != keep_dir.name)]
+
 def write_json_with_header(out_path: Path, client: str, period: dict, items: list) -> None:
     payload = {
         "client": client,
@@ -336,6 +485,40 @@ def copy_termsheets(hits_sp: list[dict], target_dir: Path) -> tuple[int, int]:
             console.print(f"[yellow]⚠️ TermSheet не найден для ISIN:[/yellow] [bright_cyan]{isin}[/bright_cyan]")
             missing += 1
     return copied, missing
+
+def _read_current_client_from_namejson() -> str | None:
+    """
+    Возвращает client_name из Data_work/name_clients.json, либо None.
+    """
+    try:
+        with open(NAME_JSON, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        client = (data.get("client_name") or "").strip()
+        return client or None
+    except Exception:
+        return None
+
+def _pick_isin_to_keep(files: list[Path]) -> tuple[Path, list[Path]]:
+    """
+    Из списка isin_*.json выбирает один, который оставляем, и список остальных для архивации.
+    Приоритет:
+      1) если есть name_clients.json — берем самый свежий файл, где имя содержит 'isin_{client}_'
+      2) иначе — самый свежий по времени изменения (mtime)
+    """
+    assert files, "files must be non-empty"
+    client = _read_current_client_from_namejson()
+
+    keep: Path | None = None
+    if client:
+        matching = [p for p in files if f"isin_{client}_" in p.name]
+        if matching:
+            keep = max(matching, key=lambda p: p.stat().st_mtime)
+
+    if keep is None:
+        keep = max(files, key=lambda p: p.stat().st_mtime)
+
+    to_archive = [p for p in files if p != keep]
+    return keep, to_archive
 
 # ---------- Точка входа ----------
 
@@ -429,6 +612,21 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         # Архивировать прошлые результаты (если есть)
         archive_existing_outputs(paths)
+
+        # Архивирование всех прошлых JSON этого клиента (с другими периодами), кроме текущих
+        old_jsons = find_previous_jsons_for_client(client, period, paths)
+        archive_jsons_to_backup(old_jsons)
+
+        # Архивировать все прошлые папки TermSheets этого клиента (с другими периодами), кроме текущей
+        old_sp_dirs = find_previous_sp_dirs(client, paths["sp_dir"])
+        archive_dirs_to_backup(old_sp_dirs)
+
+        # Архивировать JSON и папки других клиентов (полная уборка чужих артефактов)
+        foreign_jsons = find_foreign_jsons(client, paths)
+        archive_jsons_to_backup(foreign_jsons)
+
+        foreign_sp_dirs = find_foreign_sp_dirs(client, paths["sp_dir"])
+        archive_dirs_to_backup(foreign_sp_dirs)
 
         # Запись трех основных JSON
         write_json_with_header(paths["stocks_json"], client, period, hits_stocks)
