@@ -76,7 +76,7 @@ def find_input_workbook() -> Path:
     """Находит ровно один файл отчет_*.xlsx в DATA_IN.
     0 файлов — ошибка; >1 — перечислить и ошибка; иначе вернуть Path к файлу."""
     if not os.path.exists(DATA_IN):
-        console.print(f"[red]❌ Папка {DATA_IN} не найдена[/red]")
+        console.print(f"[red]❌ Папка [/red][bright_cyan]{DATA_IN}[/bright_cyan][red] не найдена[/red]")
         sys.exit(1)
     
     # Поиск файлов по маске отчет_*.xlsx (регистрозависимо)
@@ -87,13 +87,13 @@ def find_input_workbook() -> Path:
     report_files = [f for f in report_files if not os.path.basename(f).startswith('~$')]
     
     if not report_files:
-        console.print(f"[red]❌ В папке {DATA_IN} не найдено файлов по маске 'отчет_*.xlsx'[/red]")
+        console.print(f"[red]❌ В папке [/red][bright_cyan]{DATA_IN}[/bright_cyan][red] не найдено файлов по маске 'отчет_*.xlsx'[/red]")
         sys.exit(1)
     
     if len(report_files) > 1:
-        console.print(f"[red]❌ Папка {DATA_IN} содержит более одного потенциального источника данных:[/red]")
+        console.print(f"[red]❌ Папка [/red][bright_cyan]{DATA_IN}[/bright_cyan][red] содержит более одного потенциального источника данных:[/red]")
         for file in report_files:
-            console.print(f"  - {os.path.basename(file)}")
+            console.print(f"[bright_cyan]  - {os.path.basename(file)}[/bright_cyan]")
         console.print("[yellow]⚠️  Просьба удалить лишние файлы[/yellow]")
         sys.exit(1)
     
@@ -105,7 +105,7 @@ def open_workbook(ws_path: Path):
     try:
         return load_workbook(ws_path, read_only=False)
     except Exception as e:
-        console.print(f"[red]❌ Ошибка открытия файла {ws_path.name}: {e}[/red]")
+        console.print(f"[red]❌ Ошибка открытия файла [/red][bright_cyan]{ws_path.name}[/bright_cyan][red]: {e}[/red]")
         sys.exit(1)
 
 
@@ -116,7 +116,7 @@ def find_portfolio_sheet(wb):
     
     if target_name not in sheet_dict:
         console.print(f"[red]❌ Лист 'портфель' не найден[/red]")
-        console.print(f"[cyan]Доступные листы: {[s.title for s in wb.worksheets]}[/cyan]")
+        console.print(f"[bright_cyan]Доступные листы: {[s.title for s in wb.worksheets]}[/bright_cyan]")
         sys.exit(1)
     
     return sheet_dict[target_name]
@@ -206,27 +206,33 @@ def unique_preserve_order(items: List[str]) -> Tuple[List[str], int]:
 
 
 def build_client_short(name_json: dict) -> Tuple[str, str]:
-    """Из 'Иванов Иван Петрович' делает:
-       - для JSON: 'Иванов И. П.'
-       - для имени файла: 'ИвановИ.П.' (без пробела между фамилией и инициалами).
-       Возвращает (client_for_json, client_for_filename). Все падежи/инициалы аккуратно обработать."""
-    client_name = name_json.get("client_name", "")
+    """Из name_clients.client_name формирует:
+       - client_for_json: исходную строку client_name без изменений (для JSON)
+       - client_for_filename: 'Фамилия И.О.' (с пробелом между фамилией и инициалами)
+       Поддерживаются оба варианта входа:
+       1) 'Фамилия Имя Отчество' → 'Фамилия И.О.'
+       2) 'Фамилия И.О.' → 'Фамилия И.О.' (без потери второй инициалы)
+    """
+    client_name = (name_json.get("client_name") or "").strip()
     if not client_name:
         raise ValueError("Поле 'client_name' не найдено в name_clients.json")
-    
-    parts = client_name.strip().split()
+
+    parts = client_name.split(maxsplit=1)
     if len(parts) < 2:
-        raise ValueError(f"Недостаточно слов в имени клиента: {client_name}")
-    
-    surname = parts[0]
-    initials = [part[0] + "." for part in parts[1:]]
-    
-    # Для JSON: "Иванов И. П."
-    client_for_json = f"{surname} {' '.join(initials)}"
-    
-    # Для имени файла: "ИвановИ.П." (без пробела между фамилией и инициалами)
-    client_for_filename = f"{surname}{''.join(initials)}"
-    
+        raise ValueError(f"Недостаточно данных для построения инициалов: {client_name}")
+
+    surname, rest = parts[0], parts[1]
+
+    # Извлекаем именно буквы из хвоста имени (работает и для 'Имя Отчество', и для 'И.О.')
+    letters = [ch for ch in rest if ch.isalpha()]
+    if len(letters) < 2:
+        raise ValueError(f"Не удалось получить две инициалы из: {client_name}")
+
+    initials = f"{letters[0].upper()}.{letters[1].upper()}."
+
+    client_for_json = client_name                  # без изменений, как в name_clients.json
+    client_for_filename = f"{surname} {initials}"  # 'Фамилия И.О.' (с пробелом)
+
     return client_for_json, client_for_filename
 
 
@@ -267,12 +273,12 @@ def archive_files_to_backup(files: list[Path], yes: bool) -> None:
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_name = f"{src.stem}_резерв_{ts}{src.suffix}"
             src.rename(Path(DATA_BACKUP) / backup_name)
-            console.print(f"[cyan]Перемещён:[/cyan] {src.name} → Data_Backup/{backup_name}")
+            console.print(f"[bright_cyan]Перемещён: {src.name} → Data_Backup/{backup_name}[/bright_cyan]")
         return
 
     console.print("[yellow]Обнаружены предыдущие JSON-файлы isin для этого клиента:[/yellow]")
     for src in files:
-        console.print(f"  - {src.name}")
+        console.print(f"[bright_cyan]  - {src.name}[/bright_cyan]")
 
     while True:
         try:
@@ -283,7 +289,7 @@ def archive_files_to_backup(files: list[Path], yes: bool) -> None:
                     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                     backup_name = f"{src.stem}_резерв_{ts}{src.suffix}"
                     src.rename(Path(DATA_BACKUP) / backup_name)
-                    console.print(f"[cyan]Перемещён:[/cyan] {src.name} → Data_Backup/{backup_name}")
+                    console.print(f"[bright_cyan]Перемещён: {src.name} → Data_Backup/{backup_name}[/bright_cyan]")
                 break
             elif resp in ("N", "NO"):
                 console.print("[grey]Оставили предыдущие файлы на месте[/grey]")
@@ -302,7 +308,7 @@ def handle_existing_output(path: Path, yes: bool) -> None:
     if not path.exists():
         return
     
-    console.print(f"[yellow]⚠️  Файл уже существует:[/yellow] {path.name}")
+    console.print(f"[yellow]⚠️  Файл уже существует:[/yellow] [bright_cyan]{path.name}[/bright_cyan]")
     
     if yes:
         path.unlink()
@@ -327,7 +333,7 @@ def handle_existing_output(path: Path, yes: bool) -> None:
                 
                 # Перемещаем файл
                 path.rename(backup_path)
-                console.print(f"[cyan]Файл перенесен в Data_Backup:[/cyan] {backup_name}")
+                console.print(f"[bright_cyan]Файл перенесен в Data_Backup: {backup_name}[/bright_cyan]")
                 return
             else:
                 console.print("[yellow]Пожалуйста, введите Y или N[/yellow]")
@@ -358,9 +364,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         console.print("[bold green]🔍 Извлечение ISIN из Excel-отчета[/bold green]")
         
         # Шаг 1: Поиск входного файла
-        console.print(f"[cyan]Поиск файла отчета в: {DATA_IN}[/cyan]")
+        console.print(f"[bright_cyan]Поиск файла отчета в: {DATA_IN}[/bright_cyan]")
         input_file = find_input_workbook()
-        console.print(f"[green]✅ Найден файл: {input_file.name}[/green]")
+        console.print(f"[green]✅ Найден файл: [/green][bright_cyan]{input_file.name}[/bright_cyan]")
         
         # Шаг 2: Открытие книги и поиск листа
         wb = open_workbook(input_file)
@@ -451,7 +457,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         for i, isin in enumerate(unique_isins, 1):
             console.print(f"  {i:2d}. {isin}")
         
-        console.print(f"\n[green]JSON сформирован:[/green] {output_path}")
+        console.print(f"\n[green]JSON сформирован:[/green] [bright_cyan]{output_path}[/bright_cyan]")
         
         return 0
         
