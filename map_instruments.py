@@ -181,6 +181,72 @@ def load_reference_structured(xlsx_path: str, pdf_dir: str) -> dict:
         ref[isin] = {"pdf_path": pdf_path if os.path.isfile(pdf_path) else None}
     return ref
 
+
+def match_isins(
+    isins: List[str],
+    ref_stocks: dict,
+    ref_bonds: dict,
+    ref_struct: dict,
+) -> Tuple[List[dict], List[dict], List[dict], List[str]]:
+    """
+    Сопоставляет ISIN из входного JSON со справочниками.
+    Приоритет строго такой (один ISIN → максимум в одну группу):
+      1) Акции/ETF
+      2) Облигации
+      3) Структурные продукты
+      4) Иначе — в 'misses'
+    Возвращает кортеж списков:
+      hits_stocks: list[{"isin","ticker","type"}]
+      hits_bonds:  list[{"isin","name"}]
+      hits_sp:     list[{"isin","type","pdf_path"}]  # type всегда "СТРУКТУРНЫЙ ПРОДУКТ"
+      misses:      list[isin]
+    """
+    seen = set()
+    hits_stocks: List[dict] = []
+    hits_bonds: List[dict] = []
+    hits_sp: List[dict] = []
+    misses: List[str] = []
+
+    for raw in isins:
+        isin = (raw or "").strip().upper()
+        if not isin or isin in seen:
+            continue
+        seen.add(isin)
+
+        # 1) Stocks/ETF
+        s = ref_stocks.get(isin)
+        if s:
+            hits_stocks.append({
+                "isin": isin,
+                "ticker": s.get("ticker", ""),
+                "type": s.get("type", ""),
+            })
+            continue
+
+        # 2) Bonds
+        b = ref_bonds.get(isin)
+        if b:
+            hits_bonds.append({
+                "isin": isin,
+                "name": b.get("name", ""),
+            })
+            continue
+
+        # 3) Structured products
+        sp = ref_struct.get(isin)
+        if sp:
+            hits_sp.append({
+                "isin": isin,
+                "type": "СТРУКТУРНЫЙ ПРОДУКТ",
+                "pdf_path": sp.get("pdf_path"),
+            })
+            continue
+
+        # 4) Не найден ни в одном справочнике
+        misses.append(isin)
+
+    return hits_stocks, hits_bonds, hits_sp, misses
+
 # ---------- Точка входа ----------
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -217,7 +283,17 @@ def main(argv: Optional[List[str]] = None) -> int:
         structured = load_reference_structured(REF_SP_XLSX, REF_SP_PDF_DIR)
         console.print(f"[green]   Загружено записей:[/green] [bright_cyan]{len(structured)}[/bright_cyan]")
 
-        console.print("[yellow]Этап 2 завершён: справочники загружены в память. Сопоставление будет на следующем этапе.[/yellow]")
+        # Сопоставление ISIN по справочникам (без записи на диск)
+        hits_stocks, hits_bonds, hits_sp, misses = match_isins(isins, stocks, bonds, structured)
+
+        console.print("[green]🧩 Результат сопоставления:[/green]")
+        console.print(f"  Акции/ETF: [bright_cyan]{len(hits_stocks)}[/bright_cyan]")
+        console.print(f"  Облигации: [bright_cyan]{len(hits_bonds)}[/bright_cyan]")
+        console.print(f"  Структурные продукты: [bright_cyan]{len(hits_sp)}[/bright_cyan]")
+        console.print(f"  Неизвестные (noname): [bright_cyan]{len(misses)}[/bright_cyan]")
+
+        # Никакой записи файлов и копирования PDF на этом этапе
+        console.print("[yellow]Этап 3 завершён: сопоставление выполнено. Запись JSON и копирование PDF будут на следующем этапе.[/yellow]")
         return 0
 
     except KeyboardInterrupt:
